@@ -8,6 +8,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.common.exceptions import NoSuchElementException, StaleElementReferenceException, TimeoutException,NoSuchFrameException
 import time
 
+
 # Function to calculate arbitrage opportunity
 def calculate_arbitrage(home_odds, away_odds, draw_odds=None):
     if draw_odds:  # For 3-way markets
@@ -72,61 +73,70 @@ def load_url(driver, url):
 
         return False
     
-def scrape_vave(game=None, live=None, context=None):
+def scrape_cloudbet(game=None, live=None, context=None):
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Run in headless mode (without opening a browser window)
     chrome_options.add_argument("--start-maximized")  # Maximizes the browser window
+    # chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+
     
     # Initialize the driver
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    if game == "soccer":
-        game = "football"
+    print("here")
+
+    if game == "hockey":
+        game = "ice-hockey"
     elif game == "football":
         game = "american-football"
-    elif game == "hockey":
-        game = "ice-hockey"
-    print(game)
-    print(context)
-    driver.get(f"https://vave.com/{context}/{game}")
-    
-    time.sleep(5)
-    events = []
 
+    driver.get(f"https://www.cloudbet.com/en/sports/{game}/{context}")
+    time.sleep(15)
+    events = []
+    # WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.CLASS_NAME, "bt1316")))
+    
     try:
-        WebDriverWait(driver, 60).until(EC.presence_of_all_elements_located((By.CLASS_NAME, "events-table-module_table__y-Izw")))
-        containers = driver.find_elements(By.CLASS_NAME, "events-table-module_table__y-Izw")
+        
+        # Try using CSS_SELECTOR for better compatibility with shadow DOM elements
+        containers = driver.find_elements(By.XPATH, "//div[@data-component = 'competition-accordion']")
+        print(len(containers))
         for container in containers:
-            league_name = container.find_element(By.XPATH, './/div[1]//div//a').text
-            print(league_name)
-            matches = container.find_elements(By.CLASS_NAME, "events-table-module_rowWrapper__brOLD")
+            try:
+                league_name = container.find_element(By.XPATH, './/h6').text
+                print(league_name)
+            except NoSuchElementException:
+                continue
+
+            matches = container.find_elements(By.XPATH, './/div[@data-component = "event-list-item"]')
+            print(len(matches))
             for match in matches:
-                team_name = match.find_element(By.XPATH, ".//div[@data-test = 'teamSeoTitles']")
-                home_team = team_name.find_element(By.XPATH, ".//div[1]//div//span").text
-                away_team = team_name.find_element(By.XPATH, ".//div[2]//div//span").text
+                team_name = match.find_element(By.XPATH, ".//a[2]//div//div[1]")
+                home_team = team_name.find_element(By.XPATH, ".//div[1]//p//div").text
+                away_team = team_name.find_element(By.XPATH, ".//div[2]//p//div").text
                 if live == "yes":
                     match_time = "Live"
+                    match_date = "Today"
                 else:
-                    match_time = match.find_element(By.XPATH, ".//span[@data-test = 'eventTime']").text
-                    # Attempt to get `eventDate`, if it exists
-                try:
-                    if live == "no":
-                        match_date = match.find_element(By.XPATH, ".//span[@data-test = 'eventDate']").text
-                    else:
+                    if context == "today":
                         match_date = "Today"
-                except NoSuchElementException:
-                    print("eventDate not found for this game, skipping.")
-                    continue  # Skip to the next game if `eventDate` is missing
-                # Attempt to retrieve odds
-                odds = match.find_element(By.XPATH, ".//div[@class = 'events-table-module_marketsList__OUI3A']//div[1]") 
+                    elif context == "tomorrow":
+                        match_date = "Tomorrow"
+                    match_time = match.find_element(By.XPATH, ".//a[1]//p").text
+                    
+                
+                        
+
+                # odds = match.find_element(By.XPATH, "") 
                 try:              
-                    if game == "american-football" or game == "baseball":
-                        home_odds = float(odds.find_element(By.XPATH, ".//div[1]//div[@data-test = 'outcome']//span").text)
+                    if game == "american-football" or game == "baseball" or game == "ice-hockey":
+                        home_odds = float(match.find_element(By.XPATH, ".//div[1]//button[1]//p").text)
                         draw_odds = None
-                        away_odds = float(odds.find_element(By.XPATH, ".//div[2]//div[@data-test = 'outcome']//span").text)
+                        away_odds = float(match.find_element(By.XPATH, ".//div[1]//button[2]//p").text)
                     else:
-                        home_odds = float(odds.find_element(By.XPATH, ".//div[1]//div[@data-test = 'outcome']//span").text)
-                        draw_odds = float(odds.find_element(By.XPATH, ".//div[2]//div[@data-test = 'outcome']//span").text)
-                        away_odds = float(odds.find_element(By.XPATH, ".//div[3]//div[@data-test = 'outcome']//span").text)
+                        print('here')
+                        home_odds = float(match.find_element(By.XPATH, ".//div[1]//button[1]//p").text)
+                        draw_odds = float(match.find_element(By.XPATH, ".//div[1]//button[2]//p").text)
+                        away_odds = float(match.find_element(By.XPATH, ".//div[1]//button[3]//p").text)
                 except NoSuchElementException:
                     print("skipped")
                     continue
@@ -136,11 +146,11 @@ def scrape_vave(game=None, live=None, context=None):
                     positive_ev = calculate_positive_ev(home_odds, true_home_odds)
 
 
-            
+                
                 events.append({
                                 "league_name": league_name,
                                 "time": match_time,
-                                "date" if live == "no" else "score": match_date,
+                                "date": match_date,
                                 "home_team": home_team,
                                 "home_odds": home_odds if home_odds else "",
                                 "draw": "Draw",
@@ -162,12 +172,18 @@ def scrape_vave(game=None, live=None, context=None):
     return events
 
 
-def scrap_vave_data(game = "soccer", live = "no"):
+def scrap_cloudbet_data(game = "soccer", live = "no"):
     print(f"Game type: {game}")
     events = []
     if live == "yes":
-        context = "live"
+        context = "inPlay"
     else:
-        context = "prematch"
-    events.extend(scrape_vave(game=game, live = live, context = context))
+        context = "today"
+
+    events.extend(scrape_cloudbet(game = game, live = live, context = context))
+    if live == "no":
+        context = "tomorrow"
+        events.extend(scrape_cloudbet(game = game, live = live, context = context))
+
+
     return events
